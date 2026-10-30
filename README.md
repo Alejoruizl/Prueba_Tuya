@@ -1,12 +1,33 @@
 # Prueba técnica de Ingeniería de Datos (Tuya)
 
-Solución de los cuatro ejercicios. Los ejercicios 1 y 2 son de diseño y están documentados en `docs/`. Los ejercicios 3 y 4 son código ejecutable, con pruebas automatizadas que corren en GitHub Actions en cada push.
+[![CI](https://github.com/Alejoruizl/Prueba_Tuya/actions/workflows/ci.yml/badge.svg)](https://github.com/Alejoruizl/Prueba_Tuya/actions/workflows/ci.yml)
+
+## Resumen
+
+| Ejercicio | Entregable | Cómo verificarlo |
+|---|---|---|
+| 1. Dataset de teléfonos con CI/CD | Diseño en `docs/` y un prototipo ejecutable en `ejercicio1_telefonos/` (normalización E.164, reglas de validación, golden record y quality gates) | `cd ejercicio1_telefonos && python -m telefonos` |
+| 2. KPIs y veeduría de calidad | Diseño en `docs/`: modelo de tablas de calidad, KPIs con fórmula y umbral, linaje y alertas | Lectura |
+| 3. Rachas | Base SQLite con reglas de calidad y consulta parametrizada por `fecha_base` y `n` | `cd ejercicio3_rachas && python -m rachas --fecha-base 2024-12-31 --n 3` |
+| 4. HTML a base64 | Paquete Python con solo librería estándar, orientado a objetos | `cd ejercicio4_html_base64 && python -m html_base64 ejemplos/sitio` |
+
+Lo que distingue la solución:
+
+- Calidad de datos controlada y documentada: en el Excel del ejercicio 3 se detectaron un duplicado exacto, un saldo duplicado con valores distintos, un retiro con identificación mal digitada y saldos posteriores a retiros; cada caso tiene una regla, una decisión y un registro en bitácora.
+- Verificación: 54 pruebas automatizadas en GitHub Actions, incluida una validación cruzada de la consulta SQL contra una implementación independiente en Python en 40 escenarios.
+- Decisiones de interpretación explícitas, con su argumento, en cada ejercicio.
+
+Requisitos: Python 3.10 o superior. Solo el ejercicio 3 usa una dependencia externa (`openpyxl`, para leer el Excel).
 
 ```
 .
 ├── docs/
 │   ├── ejercicio1_dataset_telefonos.md   # Diseño CI/CD del dataset de teléfonos
 │   └── ejercicio2_kpis_calidad.md        # Veeduría de calidad, linaje y KPIs
+├── ejercicio1_telefonos/
+│   ├── telefonos/                        # Prototipo: normalización, reglas, supervivencia, pipeline
+│   ├── data/                             # Maestro de clientes, fuentes, contactabilidad, lista negra, config
+│   └── tests/
 ├── ejercicio3_rachas/
 │   ├── data/Rachas.xlsx                  # Datos fuente
 │   ├── sql/
@@ -20,22 +41,39 @@ Solución de los cuatro ejercicios. Los ejercicios 1 y 2 son de diseño y están
 │   ├── html_base64/                      # Paquete (solo librería estándar)
 │   ├── ejemplos/sitio/                   # HTML de ejemplo para probar la CLI
 │   └── tests/
-└── .github/workflows/ci.yml              # Pruebas de los ejercicios 3 y 4
+└── .github/workflows/ci.yml              # Pruebas de los ejercicios 1, 3 y 4
 ```
-
-Requisitos: Python 3.10 o superior. El ejercicio 3 usa `openpyxl` únicamente para leer el Excel; el ejercicio 4 no tiene dependencias externas.
 
 ---
 
 ## Ejercicio 1: dataset de números de teléfono con CI/CD
 
-Documento completo: [docs/ejercicio1_dataset_telefonos.md](docs/ejercicio1_dataset_telefonos.md)
+Documento de diseño: [docs/ejercicio1_dataset_telefonos.md](docs/ejercicio1_dataset_telefonos.md)
 
 - Arquitectura por capas: Bronze inmutable por fuente, Silver normalizado y validado, y Gold (`dim_cliente_telefono`) con historia SCD2. Los registros rechazados van a una tabla de cuarentena con el motivo; no se descartan.
 - Reglas de negocio: normalización a E.164, clasificación móvil o fijo según la marcación colombiana vigente (fijos `60X` desde 2021), detección de números basura o compartidos, integridad con el maestro de clientes y autorización de contacto (Ley 1581 de 2012).
 - Golden record: un puntaje determinístico (confiabilidad de la fuente, verificación, recencia y rebotes) elige el teléfono principal de cada cliente por tipo.
 - CI/CD: en cada pull request corren lint, pruebas unitarias, contratos de datos y pruebas de integración sobre una muestra anonimizada. La promoción va de DEV a QA y luego a PRD con aprobación del data owner. Cada lote se publica en modo blue/green detrás de quality gates (volumen, cuarentena, unicidad, frescura y deriva), con rollback por time travel.
 - Las reglas y los umbrales son configuración versionada en Git, de modo que cada número publicado se puede rastrear hasta la versión del proceso que lo produjo.
+
+### Prototipo ejecutable
+
+El enunciado pide diseñar e implementar, así que el diseño viene acompañado de un prototipo en Python (solo librería estándar) que recorre el flujo completo con datos ficticios:
+
+```bash
+cd ejercicio1_telefonos
+python -m telefonos --fecha 2026-10-30      # genera salida/dim_cliente_telefono.csv, cuarentena.csv y reporte_gates.json
+python -m unittest discover -s tests -v
+```
+
+| Módulo | Qué implementa del diseño |
+|---|---|
+| `normalizacion.py` | Normalización a E.164 de los formatos habituales (`+57 (300) 123-4567`, `0057...`, `03...`), clasificación móvil o fijo según la marcación colombiana y fijos antiguos de 7 dígitos completados con el indicativo de la ciudad del cliente |
+| `reglas.py` | Reglas T01 a T06: formato, número basura, lista negra, teléfono compartido, cliente inexistente y autorización de contacto. Lo inválido va a cuarentena con el motivo y la fila de origen |
+| `supervivencia.py` | Golden record: puntaje por confiabilidad de la fuente, verificación por contacto efectivo, recencia y rebotes. El mayor puntaje por cliente y tipo es el principal |
+| `pipeline.py` | Capas Bronze (lectura de fuentes), Silver (validación) y Gold (publicación), con quality gates de volumen, tasa de cuarentena, unicidad del principal y cobertura de móvil. Si un gate falla, la tabla Gold no se escribe y la CLI termina con código 1 |
+
+Los pesos, bonos y umbrales están en `data/config.json`, no en el código. Los datos de ejemplo cubren un número verificado que gana a uno de fuente más confiable con rebotes, un teléfono compartido por tres clientes, un cliente sin autorización (se publica con `apto_contacto = false`) y un cliente que no existe en el maestro.
 
 ## Ejercicio 2: veeduría de calidad y KPIs
 

@@ -6,6 +6,21 @@ on:
   pull_request:
 
 jobs:
+  ejercicio1-telefonos:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ejercicio1_telefonos
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Pruebas (solo librería estándar)
+        run: python -m unittest discover -s tests -v
+      - name: Corrida de ejemplo con quality gates
+        run: python -m telefonos --fecha 2026-10-30 --salida /tmp/salida
+
   ejercicio3-rachas:
     runs-on: ubuntu-latest
     defaults:

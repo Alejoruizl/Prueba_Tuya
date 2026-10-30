@@ -1,0 +1,13 @@
+{
+  "supervivencia": {
+    "peso_fuente": {"core": 0.4, "app": 0.3, "crm": 0.2, "aliados": 0.1},
+    "bono_verificado": 0.3,
+    "dias_recencia": 365,
+    "penalizacion_rebote": 0.15
+  },
+  "quality_gates": {
+    "volumen_minimo": 10,
+    "tasa_cuarentena_maxima": 0.35,
+    "cobertura_movil_minima": 0.6
+  }
+}

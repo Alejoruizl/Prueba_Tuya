@@ -1,0 +1,9 @@
+cliente_id,ciudad,autoriza_contacto
+C001,Medellín,SI
+C002,Bogotá,SI
+C003,Cali,NO
+C004,Barranquilla,SI
+C005,Medellín,SI
+C006,Bucaramanga,SI
+C007,Pereira,SI
+C008,Bogotá,SI
