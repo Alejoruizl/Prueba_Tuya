@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.db
+.venv/
+venv/
+
+# Salidas generadas por el ejercicio 4
+*_base64.html
+salida/
+resultado.json
+
+# Documentos de referencia en la raíz (enunciado y datos originales);
+# los datos usados por el ejercicio 3 están en ejercicio3_rachas/data
+/*.pdf
+/*.xlsx

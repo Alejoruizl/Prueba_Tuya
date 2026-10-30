@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ejercicio3-rachas:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ejercicio3_rachas
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Pruebas y validación cruzada
+        run: python -m unittest discover -s tests -v
+      - name: Construcción de la base y consulta de ejemplo
+        run: python -m rachas --fecha-base 2024-12-31 --n 3 --db /tmp/rachas.db
+
+  ejercicio4-html-base64:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ejercicio4_html_base64
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Pruebas (solo librería estándar)
+        run: python -m unittest discover -s tests -v
