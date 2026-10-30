@@ -2,95 +2,89 @@
 
 [![CI](https://github.com/Alejoruizl/Prueba_Tuya/actions/workflows/ci.yml/badge.svg)](https://github.com/Alejoruizl/Prueba_Tuya/actions/workflows/ci.yml)
 
-## Resumen
+En este repositorio está mi solución a los cuatro ejercicios de la prueba. Los ejercicios 1 y 2 son de diseño y los documenté en `docs/`; para el 1 además armé un prototipo que corre de verdad, porque el enunciado habla de diseñar *e implementar*. Los ejercicios 3 y 4 son código, con sus pruebas, y todo se ejecuta en GitHub Actions cada vez que hago push.
 
-| Ejercicio | Entregable | Cómo verificarlo |
+Para ir rápido:
+
+| Ejercicio | Dónde está | Para probarlo |
 |---|---|---|
-| 1. Dataset de teléfonos con CI/CD | Diseño en `docs/` y un prototipo ejecutable en `ejercicio1_telefonos/` (normalización E.164, reglas de validación, golden record y quality gates) | `cd ejercicio1_telefonos && python -m telefonos` |
-| 2. KPIs y veeduría de calidad | Diseño en `docs/`: modelo de tablas de calidad, KPIs con fórmula y umbral, linaje y alertas | Lectura |
-| 3. Rachas | Base SQLite con reglas de calidad y consulta parametrizada por `fecha_base` y `n` | `cd ejercicio3_rachas && python -m rachas --fecha-base 2024-12-31 --n 3` |
-| 4. HTML a base64 | Paquete Python con solo librería estándar, orientado a objetos | `cd ejercicio4_html_base64 && python -m html_base64 ejemplos/sitio` |
+| 1. Dataset de teléfonos | `docs/ejercicio1_dataset_telefonos.md` + `ejercicio1_telefonos/` | `cd ejercicio1_telefonos && python -m telefonos` |
+| 2. KPIs y veeduría | `docs/ejercicio2_kpis_calidad.md` | lectura |
+| 3. Rachas | `ejercicio3_rachas/` | `cd ejercicio3_rachas && python -m rachas --fecha-base 2024-12-31 --n 3` |
+| 4. HTML a base64 | `ejercicio4_html_base64/` | `cd ejercicio4_html_base64 && python -m html_base64 ejemplos/sitio` |
 
-Lo que distingue la solución:
+Si solo va a mirar una cosa, le sugiero la sección de calidad de datos del ejercicio 3: el Excel trae varios problemas (un duplicado con saldos distintos, un retiro con la cédula mal digitada, saldos después del retiro) y ahí explico qué hice con cada uno y por qué. En total hay 54 pruebas automatizadas; la que más me gusta es la que compara la consulta SQL contra una implementación aparte en Python en 40 escenarios distintos.
 
-- Calidad de datos controlada y documentada: en el Excel del ejercicio 3 se detectaron un duplicado exacto, un saldo duplicado con valores distintos, un retiro con identificación mal digitada y saldos posteriores a retiros; cada caso tiene una regla, una decisión y un registro en bitácora.
-- Verificación: 54 pruebas automatizadas en GitHub Actions, incluida una validación cruzada de la consulta SQL contra una implementación independiente en Python en 40 escenarios.
-- Decisiones de interpretación explícitas, con su argumento, en cada ejercicio.
-
-Requisitos: Python 3.10 o superior. Solo el ejercicio 3 usa una dependencia externa (`openpyxl`, para leer el Excel).
+Necesita Python 3.10 o superior. La única dependencia externa es `openpyxl` en el ejercicio 3, para leer el Excel; lo demás es librería estándar.
 
 ```
 .
 ├── docs/
-│   ├── ejercicio1_dataset_telefonos.md   # Diseño CI/CD del dataset de teléfonos
-│   └── ejercicio2_kpis_calidad.md        # Veeduría de calidad, linaje y KPIs
+│   ├── ejercicio1_dataset_telefonos.md
+│   └── ejercicio2_kpis_calidad.md
 ├── ejercicio1_telefonos/
-│   ├── telefonos/                        # Prototipo: normalización, reglas, supervivencia, pipeline
-│   ├── data/                             # Maestro de clientes, fuentes, contactabilidad, lista negra, config
+│   ├── telefonos/          # normalización, reglas, supervivencia, pipeline
+│   ├── data/               # maestro de clientes, fuentes, contactabilidad, lista negra, config
 │   └── tests/
 ├── ejercicio3_rachas/
-│   ├── data/Rachas.xlsx                  # Datos fuente
-│   ├── sql/
-│   │   ├── 01_esquema.sql                # Modelo: staging, niveles, capa depurada, bitácora de calidad
-│   │   ├── 02_calidad_y_carga.sql        # Reglas de calidad y carga a la capa depurada
-│   │   └── 03_rachas.sql                 # Consulta parametrizada (:fecha_base, :n)
-│   ├── rachas/                           # Carga del Excel y CLI (Python)
-│   ├── resultados/                       # Salida de ejemplo (fecha_base 2024-12-31, n = 3)
+│   ├── data/Rachas.xlsx
+│   ├── sql/                # 01_esquema, 02_calidad_y_carga, 03_rachas
+│   ├── rachas/             # carga del Excel y CLI
+│   ├── resultados/         # salida de ejemplo (fecha_base 2024-12-31, n = 3)
 │   └── tests/
 ├── ejercicio4_html_base64/
-│   ├── html_base64/                      # Paquete (solo librería estándar)
-│   ├── ejemplos/sitio/                   # HTML de ejemplo para probar la CLI
+│   ├── html_base64/
+│   ├── ejemplos/sitio/
 │   └── tests/
-└── .github/workflows/ci.yml              # Pruebas de los ejercicios 1, 3 y 4
+└── .github/workflows/ci.yml
 ```
 
 ---
 
-## Ejercicio 1: dataset de números de teléfono con CI/CD
+## Ejercicio 1: dataset de teléfonos con CI/CD
 
-Documento de diseño: [docs/ejercicio1_dataset_telefonos.md](docs/ejercicio1_dataset_telefonos.md)
+El diseño completo está en [docs/ejercicio1_dataset_telefonos.md](docs/ejercicio1_dataset_telefonos.md). En resumen:
 
-- Arquitectura por capas: Bronze inmutable por fuente, Silver normalizado y validado, y Gold (`dim_cliente_telefono`) con historia SCD2. Los registros rechazados van a una tabla de cuarentena con el motivo; no se descartan.
-- Reglas de negocio: normalización a E.164, clasificación móvil o fijo según la marcación colombiana vigente (fijos `60X` desde 2021), detección de números basura o compartidos, integridad con el maestro de clientes y autorización de contacto (Ley 1581 de 2012).
-- Golden record: un puntaje determinístico (confiabilidad de la fuente, verificación, recencia y rebotes) elige el teléfono principal de cada cliente por tipo.
-- CI/CD: en cada pull request corren lint, pruebas unitarias, contratos de datos y pruebas de integración sobre una muestra anonimizada. La promoción va de DEV a QA y luego a PRD con aprobación del data owner. Cada lote se publica en modo blue/green detrás de quality gates (volumen, cuarentena, unicidad, frescura y deriva), con rollback por time travel.
-- Las reglas y los umbrales son configuración versionada en Git, de modo que cada número publicado se puede rastrear hasta la versión del proceso que lo produjo.
+- Tres capas: Bronze con el dato crudo de cada fuente (nunca se modifica), Silver con los teléfonos normalizados a E.164 y validados, y Gold con `dim_cliente_telefono`, que guarda historia (SCD tipo 2) y marca cuál es el teléfono principal de cada cliente. Lo que no pasa las validaciones no se bota: va a una tabla de cuarentena con el motivo.
+- Las reglas de negocio son las que uno esperaría para Colombia: móviles que empiezan por 3, fijos con la marcación unificada `60X`, números basura tipo `3000000000`, un mismo número repartido entre muchos clientes, clientes que no existen en el maestro y la autorización de contacto (Ley 1581).
+- Cuando un cliente tiene varios números del mismo tipo, el principal se escoge con un puntaje: pesa la fuente, si el número se verificó con un contacto efectivo, qué tan reciente es y si ha rebotado.
+- La parte de CI/CD: en cada pull request corren lint, pruebas unitarias, contratos de datos y una corrida sobre una muestra anonimizada. Se promueve de DEV a QA y a PRD con aprobación del dueño del dato. El lote nuevo se escribe aparte y solo se publica si pasa los quality gates (volumen, cuarentena, unicidad, frescura, deriva); si algo falla, los consumidores siguen leyendo el lote anterior.
+- Reglas, pesos y umbrales son configuración versionada en Git, no código. Así cualquier número publicado se puede rastrear hasta la versión del proceso que lo produjo.
 
-### Prototipo ejecutable
+### El prototipo
 
-El enunciado pide diseñar e implementar, así que el diseño viene acompañado de un prototipo en Python (solo librería estándar) que recorre el flujo completo con datos ficticios:
+Está en `ejercicio1_telefonos/` y es Python puro, sin dependencias.
 
 ```bash
 cd ejercicio1_telefonos
-python -m telefonos --fecha 2026-10-30      # genera salida/dim_cliente_telefono.csv, cuarentena.csv y reporte_gates.json
+python -m telefonos --fecha 2026-10-30     # deja la salida en salida/
 python -m unittest discover -s tests -v
 ```
 
-| Módulo | Qué implementa del diseño |
-|---|---|
-| `normalizacion.py` | Normalización a E.164 de los formatos habituales (`+57 (300) 123-4567`, `0057...`, `03...`), clasificación móvil o fijo según la marcación colombiana y fijos antiguos de 7 dígitos completados con el indicativo de la ciudad del cliente |
-| `reglas.py` | Reglas T01 a T06: formato, número basura, lista negra, teléfono compartido, cliente inexistente y autorización de contacto. Lo inválido va a cuarentena con el motivo y la fila de origen |
-| `supervivencia.py` | Golden record: puntaje por confiabilidad de la fuente, verificación por contacto efectivo, recencia y rebotes. El mayor puntaje por cliente y tipo es el principal |
-| `pipeline.py` | Capas Bronze (lectura de fuentes), Silver (validación) y Gold (publicación), con quality gates de volumen, tasa de cuarentena, unicidad del principal y cobertura de móvil. Si un gate falla, la tabla Gold no se escribe y la CLI termina con código 1 |
+Genera tres archivos: `dim_cliente_telefono.csv` (la tabla Gold), `cuarentena.csv` y `reporte_gates.json`. Si algún gate falla, la tabla Gold no se escribe y el comando termina con código 1, que es como lo detendría un orquestador.
 
-Los pesos, bonos y umbrales están en `data/config.json`, no en el código. Los datos de ejemplo cubren un número verificado que gana a uno de fuente más confiable con rebotes, un teléfono compartido por tres clientes, un cliente sin autorización (se publica con `apto_contacto = false`) y un cliente que no existe en el maestro.
+Qué hay en cada módulo:
+
+- `normalizacion.py` convierte a E.164 los formatos típicos (`+57 (300) 123-4567`, `0057...`, `03...`), decide si es móvil o fijo y, si llega un fijo viejo de 7 dígitos, lo completa con el indicativo de la ciudad del cliente.
+- `reglas.py` son las reglas T01 a T06 del documento. Cada rechazo guarda la regla, el motivo y la fila de origen.
+- `supervivencia.py` calcula el puntaje y elige el principal por cliente y tipo.
+- `pipeline.py` une todo (Bronze, Silver, Gold) y evalúa los gates: volumen mínimo, tasa de cuarentena, unicidad del principal y cobertura de móvil.
+
+Los pesos y umbrales están en `data/config.json`. Los datos de ejemplo los armé para que se vieran los casos interesantes: un número verificado que le gana a otro de una fuente más confiable pero que ha rebotado, un teléfono compartido por tres clientes, un cliente sin autorización (sale con `apto_contacto = false`) y uno que no está en el maestro.
 
 ## Ejercicio 2: veeduría de calidad y KPIs
 
-Documento completo: [docs/ejercicio2_kpis_calidad.md](docs/ejercicio2_kpis_calidad.md)
+Documento: [docs/ejercicio2_kpis_calidad.md](docs/ejercicio2_kpis_calidad.md)
 
-- Observatorio de calidad alimentado por el mismo pipeline: tablas `dq_corridas`, `dq_resultados_reglas`, `dq_cuarentena` y `hechos_contactabilidad`.
-- KPIs por dimensión de calidad (completitud, validez, unicidad, consistencia, oportunidad y exactitud, esta última medida como contactabilidad real), de salud del proceso y de impacto en el negocio. Cada uno tiene fórmula, dueño y umbral, definidos una sola vez en una capa semántica.
-- Trazabilidad: linaje técnico con OpenLineage (Marquez o DataHub) y linaje por registro (`id_lote`, `version_pipeline`, `fuente_origen`) consultable desde el tablero.
-- Alertas por severidad y un tablero de autoservicio con seguridad a nivel de fila y columna.
+La idea es que el mismo pipeline del ejercicio 1 vaya dejando sus resultados de calidad en tablas (`dq_corridas`, `dq_resultados_reglas`, `dq_cuarentena`), junto con lo que devuelven los canales de contacto (`hechos_contactabilidad`). Sobre eso se definen los KPIs una sola vez, en una capa semántica, cada uno con su fórmula, su dueño y su umbral: completitud, validez, unicidad, consistencia, oportunidad y exactitud (que para un teléfono es, al final, si contesta alguien). El linaje técnico va con OpenLineage y el de cada registro se lleva con `id_lote`, `version_pipeline` y `fuente_origen`; así desde el tablero se puede llegar hasta el origen de un número. Hay alertas por severidad y el tablero es de autoservicio, con seguridad por fila y columna.
 
 ---
 
 ## Ejercicio 3: rachas
 
-Motor: SQLite, a través del módulo `sqlite3` de Python (no requiere instalar un servidor). La consulta usa SQL estándar (CTE y funciones de ventana); para llevarla a PostgreSQL o Impala basta con ajustar la aritmética de fechas.
+Usé SQLite porque viene con Python y cualquiera puede reproducirlo sin instalar nada. La consulta es SQL estándar (CTE y funciones de ventana); pasarla a PostgreSQL o Impala sería cambiar la aritmética de fechas y poco más.
 
-### Ejecución
+### Cómo correrlo
 
 ```bash
 cd ejercicio3_rachas
@@ -99,7 +93,7 @@ python -m rachas --fecha-base 2024-12-31 --n 3 --salida resultados/rachas.csv
 python -m unittest discover -s tests -v
 ```
 
-El comando crea `rachas.db`, carga el Excel, aplica las reglas de calidad e imprime el resumen de incidencias y el resultado. Con la base ya construida, la consulta también se puede ejecutar desde la CLI de SQLite (`sqlite3 rachas.db`). La fecha va con comillas simples dentro de comillas dobles, porque sin ellas la CLI evalúa `2024-12-31` como una resta:
+Eso crea `rachas.db`, carga el Excel, aplica las reglas de calidad y muestra el resumen de incidencias y el resultado. Si prefiere correr la consulta directo en la CLI de SQLite (`sqlite3 rachas.db`), ojo con las comillas: sin ellas la CLI interpreta `2024-12-31` como una resta y devuelve cero filas sin avisar.
 
 ```sql
 .parameter set :fecha_base "'2024-12-31'"
@@ -107,69 +101,63 @@ El comando crea `rachas.db`, carga el Excel, aplica las reglas de calidad e impr
 .read sql/03_rachas.sql
 ```
 
-### Flujo
+### Cómo está armado
 
-1. `sql/01_esquema.sql`: tablas staging sin tipos forzados (conservan el dato tal como viene), `dim_nivel` con los rangos de deuda (la consulta no tiene valores quemados), tablas depuradas con llaves primarias y `CHECK` (corte en fin de mes, saldo no negativo) y la bitácora `dq_incidencias`.
-2. `rachas/cargar_excel.py`: lee las hojas ubicando las columnas por nombre y guarda el número de fila de origen para trazabilidad. La carga es atómica: si falta una hoja o una columna, staging queda como estaba.
-3. `sql/02_calidad_y_carga.sql`: reglas de calidad idempotentes. Cada regla que se dispara deja un registro en `dq_incidencias` con severidad `RECHAZO`, `CORRECCION` o `ADVERTENCIA`.
-4. `sql/03_rachas.sql`: la consulta del ejercicio.
+Son tres scripts SQL y un cargador en Python:
 
-### Calidad de datos
+1. `01_esquema.sql` crea las tablas de staging (sin tipos, para conservar el dato tal como viene), `dim_nivel` con los rangos de deuda, las tablas depuradas con llave primaria y `CHECK`, y la bitácora `dq_incidencias`. Puse los niveles en una tabla para no dejar números quemados en la consulta.
+2. `cargar_excel.py` lee las hojas buscando las columnas por nombre y guarda el número de fila original. La carga es atómica: si falta una hoja, staging queda como estaba.
+3. `02_calidad_y_carga.sql` aplica las reglas de calidad y pasa los datos a la capa depurada. Cada regla que se dispara deja un registro con severidad `RECHAZO`, `CORRECCION` o `ADVERTENCIA`.
+4. `03_rachas.sql` es la consulta del ejercicio.
 
-Hallazgos en el archivo entregado:
+### Lo que encontré en el Excel
 
-| Regla | Hallazgo | Tratamiento |
-|---|---|---|
-| R07 duplicado exacto | `9NWFWJ38XN31WBFXG` aparece dos veces en 2023-08 con el mismo saldo | Se deja un solo registro |
-| R08 duplicado conflictivo | `R7Q4Z9AULIORDJQ9D` tiene dos saldos en 2024-12: 571.481 y 1.142.962 (exactamente el doble) | Se conserva el mayor, con un criterio conservador de riesgo (no subestimar la deuda), y ambos quedan en la bitácora |
-| R09 y R12 retiro sin historia | El retiro `1LFTDYT2H0I9ZGED3S8` tiene 19 caracteres (los demás tienen 17) y no existe en historia. Muy probablemente es `1LFTDYT2H0I9ZG3S8` con "ED" de más | No se corrige automáticamente, porque cambiar una identificación requiere confirmarlo con la fuente. La regla reporta la posible coincidencia |
-| R13 saldo posterior al retiro | `0TTW5R9RRCJ0A9E5F` (retiro 2024-10-10) tiene 3 cortes posteriores y `THJ9OBJH3W6ANRCMS` (retiro 2024-01-20) tiene 11 | Se conservan y se reportan (ver decisiones de interpretación) |
+- **Un duplicado exacto**: `9NWFWJ38XN31WBFXG` aparece dos veces en 2023-08 con el mismo saldo. Dejé uno (regla R07).
+- **Un duplicado con saldos distintos**: `R7Q4Z9AULIORDJQ9D` tiene dos saldos en 2024-12, 571.481 y 1.142.962, que es exactamente el doble. Huele a registro sumado dos veces. Me quedé con el mayor, por un criterio conservador de riesgo (prefiero no subestimar deuda), y dejé los dos en la bitácora (R08).
+- **Un retiro que no cuadra**: `1LFTDYT2H0I9ZGED3S8` tiene 19 caracteres cuando todas las demás identificaciones tienen 17, y no existe en historia. Casi seguro es `1LFTDYT2H0I9ZG3S8` con un "ED" de más. No lo corregí automáticamente: cambiar una identificación sin confirmar con la fuente puede terminar aplicándole el retiro a otro cliente. La regla lo reporta junto con la coincidencia probable (R09 y R12).
+- **Saldos después del retiro**: `0TTW5R9RRCJ0A9E5F` se retiró el 2024-10-10 y tiene 3 cortes posteriores; `THJ9OBJH3W6ANRCMS` se retiró el 2024-01-20 y tiene 11. Los conservé, más abajo explico por qué (R13).
 
-También se validan casos que este archivo no trae pero que una carga real sí puede traer: identificaciones vacías, con espacios o en minúsculas; fechas inválidas o inexistentes (SQLite convierte `2024-02-30` en `2024-03-01` sin avisar); números de serie de Excel sin convertir a fecha; cortes que no son fin de mes; saldos no numéricos o negativos, y retiros duplicados.
+Aparte de eso, el script valida cosas que este archivo no trae pero que una carga real sí: identificaciones vacías o con espacios, fechas inválidas o inexistentes (SQLite convierte `2024-02-30` en `2024-03-01` sin decir nada, y un número de serie de Excel lo toma como día juliano), cortes que no son fin de mes, saldos no numéricos o negativos y retiros repetidos.
 
-### Consulta (`03_rachas.sql`)
+### La consulta
 
-| Paso | CTE | Qué hace |
-|---|---|---|
-| 1 | `historia_vigente` | Toma la foto a la `fecha_base`: solo cortes con fecha menor o igual a la `fecha_base`. |
-| 2 | `calendario`, `primera_aparicion` | Genera los fines de mes entre el primer y el último corte cargado, y la primera aparición de cada cliente. |
-| 3 | `saldos_mensuales` | Arma la serie mensual de cada cliente desde su primera aparición. Un mes sin registro se imputa con saldo 0 (N0), excepto si el corte es posterior a la fecha de retiro: ese mes no existe para el cliente. |
-| 4 | `saldos_clasificados` | Asigna el nivel uniendo con `dim_nivel` por intervalos `[min, max)` y calcula el número absoluto de cada mes. |
-| 5 | `islas`, `rachas` | Gaps and islands: dentro de un cliente y nivel, el número de mes menos su posición (`ROW_NUMBER`) es constante mientras los meses sean consecutivos. Un cambio de nivel o un mes inexistente inicia una racha nueva. |
-| 6 | `rachas_priorizadas` | Filtra las rachas de al menos `n` meses y, con `ROW_NUMBER()` ordenado por `racha DESC, fecha_fin DESC`, deja la más larga y, si hay empate, la más reciente. |
+Va por pasos, un CTE cada uno:
 
-Salida: `identificacion`, `racha`, `fecha_fin` y `nivel`, con una fila por cliente que tenga al menos una racha de `n` meses o más. Con `fecha_base = 2024-12-31` y `n = 3` el resultado tiene 92 clientes: [resultados/rachas_2024-12-31_n3.csv](ejercicio3_rachas/resultados/rachas_2024-12-31_n3.csv).
+1. `historia_vigente`: la foto a la `fecha_base`, solo cortes menores o iguales a ella.
+2. `calendario` y `primera_aparicion`: los fines de mes entre el primer y el último corte cargado, y el primer corte de cada cliente.
+3. `saldos_mensuales`: la serie mensual de cada cliente desde su primera aparición. Un mes sin registro se imputa como saldo 0 (N0), salvo que el corte sea posterior a la fecha de retiro: en ese caso el mes simplemente no existe para ese cliente.
+4. `saldos_clasificados`: el nivel sale de cruzar con `dim_nivel` por intervalo `[min, max)`. También calculo el número absoluto del mes (`año * 12 + mes`).
+5. `islas` y `rachas`: la técnica clásica de gaps and islands. Dentro de un cliente y un nivel, el número de mes menos su posición (`ROW_NUMBER`) se mantiene constante mientras los meses sean consecutivos; cuando cambia el nivel o falta un mes, la diferencia cambia y arranca otra racha. Uso el número de mes y no dos `ROW_NUMBER` precisamente para que un mes inexistente corte la racha.
+6. `rachas_priorizadas`: filtro `racha >= n` y me quedo con la primera ordenando por `racha DESC, fecha_fin DESC`, o sea la más larga y, si empatan, la más reciente.
 
-### Decisiones de interpretación
+La salida es `identificacion`, `racha`, `fecha_fin` y `nivel`, una fila por cliente. Con `fecha_base = 2024-12-31` y `n = 3` salen 92 clientes; el resultado está en [resultados/rachas_2024-12-31_n3.csv](ejercicio3_rachas/resultados/rachas_2024-12-31_n3.csv).
 
-- Retiro: el enunciado establece que después de la fecha de retiro no se imputa N0. Los saldos que sí aparecen reportados después del retiro se conservan, porque un cliente que se retira puede seguir teniendo saldo pendiente; la regla R13 los deja registrados para seguimiento.
-- Un retiro con fecha posterior a la `fecha_base` no tiene efecto: todos los cortes evaluados son anteriores a él.
-- Los meses faltantes se imputan hasta el último corte cargado que sea menor o igual a la `fecha_base`, no hasta la `fecha_base` misma. Con una `fecha_base` posterior a los datos, imputar hasta esa fecha llenaría a todos los clientes de meses N0 que la fuente todavía no ha reportado.
-- El corte de un mes es su último día y solo cuenta si es menor o igual a la `fecha_base`: con `fecha_base = 2024-06-15`, el último corte considerado es 2024-05-31.
+### Decisiones que tomé donde el enunciado deja espacio
+
+- El enunciado dice que después del retiro no se imputa N0, pero no dice qué hacer con saldos que sí vienen reportados después del retiro. Los conservé: un cliente que se retira puede seguir debiendo, y borrar un saldo real me parece peor que dejarlo. En la práctica solo afecta a un cliente (`THJ9...`) y queda reportado en la bitácora para que negocio decida.
+- Un retiro con fecha posterior a la `fecha_base` no cambia nada, porque todos los cortes que se miran son anteriores.
+- Los meses faltantes se imputan hasta el último corte que exista en el archivo, no hasta la `fecha_base`. Si la `fecha_base` fuera 2025-06-30 y los datos llegan a diciembre de 2024, imputar hasta junio le inventaría seis meses en N0 a todo el mundo.
+- El corte de un mes es su último día y cuenta solo si es menor o igual a la `fecha_base`: con `2024-06-15` el último corte que entra es el de mayo.
 
 ### Pruebas
 
-- Casos sintéticos para cada regla del enunciado: límites exactos de cada nivel, imputación de meses intermedios y finales, sin imputación antes de la primera aparición, la racha más larga gana a la más reciente, desempate por la más reciente, filtro por `n`, retiro a mitad y a fin de mes, saldos reportados después del retiro, meses inexistentes que cortan una racha, y retiros y cortes posteriores a la `fecha_base`.
-- Reglas de calidad: un escenario con cada tipo de error verifica la bitácora y la capa depurada.
-- Validación cruzada: una implementación independiente en Python puro se compara con la consulta SQL sobre los datos reales en 40 combinaciones de `fecha_base` y `n`, incluidas fechas a mitad de mes y posteriores a los datos.
+Hay casos pequeños para cada regla del enunciado (los límites exactos de cada nivel, la imputación, el retiro a mitad de mes y a fin de mes, el desempate, el filtro por `n`, cortes y retiros después de la `fecha_base`), un escenario de calidad con cada tipo de error, y la validación cruzada: una implementación independiente en Python puro que se compara con el SQL sobre los datos reales en 40 combinaciones de `fecha_base` y `n`. Si las dos coinciden en todas, me quedo bastante tranquilo.
 
 ---
 
 ## Ejercicio 4: imágenes de HTML a base64
 
-Paquete `html_base64`, escrito solo con la librería estándar y orientado a objetos.
-
-### Ejecución
+Paquete `html_base64`, solo librería estándar.
 
 ```bash
 cd ejercicio4_html_base64
-python -m html_base64 ejemplos/sitio                         # genera *_base64.html junto a cada original
-python -m html_base64 a.html b.html carpeta/ -o salida/      # replica la estructura en otro directorio
+python -m html_base64 ejemplos/sitio                        # genera *_base64.html al lado de cada original
+python -m html_base64 a.html b.html carpeta/ -o salida/     # o replica la estructura en otra carpeta
 python -m html_base64 ejemplos/sitio --reporte resultado.json --sin-remotas
 python -m unittest discover -s tests -v
 ```
 
-Uso desde código:
+Desde código:
 
 ```python
 from html_base64 import ejecutar
@@ -181,33 +169,21 @@ resultado = ejecutar(["pagina.html", "carpeta/"]).a_dict()
 # }
 ```
 
-La CLI imprime ese objeto en JSON y termina con código 1 si alguna imagen falló, para poder usarla dentro de un pipeline.
+La CLI imprime ese mismo objeto en JSON y termina con código 1 si alguna imagen falló, por si se quiere encadenar en un pipeline.
 
-### Diseño
+### Cómo lo diseñé
 
-| Módulo | Responsabilidad |
-|---|---|
-| `descubrimiento.BuscadorHtml` | Recibe archivos y directorios, recorre subdirectorios, filtra `.html` y `.htm`, elimina duplicados y omite las salidas de ejecuciones anteriores (`*_base64.html`). Las rutas indicadas explícitamente que no se procesan quedan en `fail` con el motivo. |
-| `html_img` | Ubica las etiquetas `<img>` con `html.parser` (ignora comentarios, `<script>` y `<style>`) y reemplaza solo el valor de `src` en el texto original, de modo que el resto del documento queda igual byte a byte. |
-| `fuentes` | Patrón Strategy: `FuenteImagen` (abstracta), `FuenteArchivoLocal` (rutas relativas al HTML, absolutas y `file://`) y `FuenteHttp` (`http`, `https` y `//cdn...`, con timeout y tamaño máximo). Un origen nuevo se agrega con una clase, sin tocar el procesador. |
-| `fuentes.detectar_mime` | Identifica el formato por la firma binaria del archivo. Si la extensión o el servidor dicen PNG pero el contenido no lo es, la imagen se reporta como fallida en lugar de incrustar un archivo dañado. |
-| `procesador.ProcesadorHtml` | Orquesta el proceso con las dependencias inyectadas (fuentes y destino), guarda en caché las imágenes ya leídas o descargadas y nunca escribe sobre un archivo de entrada. Un error inesperado en un archivo se reporta y no detiene el resto del lote. |
-| `procesador.DestinoSalida` | Calcula la ruta del archivo nuevo, junto al original o replicando la estructura en el directorio de salida. |
-| `reporte.ReporteProcesamiento` | El objeto `{success, fail}` agrupado por archivo HTML. |
+Lo separé en clases con una responsabilidad cada una:
 
-### Casos contemplados
+- `BuscadorHtml` recibe archivos o carpetas, recorre subcarpetas, se queda con `.html` y `.htm`, quita duplicados y salta las salidas de corridas anteriores. Si me pasan explícitamente un archivo que no es HTML, lo reporto en `fail` en vez de ignorarlo en silencio.
+- `html_img` encuentra las etiquetas `<img>` con `html.parser` (así no me confundo con comentarios, `<script>` o atributos como `data-src`) y reemplaza únicamente el valor del `src` dentro del texto original. El resto del archivo queda idéntico, byte a byte.
+- `fuentes` es un Strategy: `FuenteImagen` como clase abstracta y dos implementaciones, `FuenteArchivoLocal` (rutas relativas, absolutas y `file://`) y `FuenteHttp` (`http`, `https` y `//cdn...`, con timeout y tamaño máximo). Para leer de S3, por ejemplo, bastaría con agregar otra clase.
+- `detectar_mime` mira la firma binaria del archivo, no la extensión. Si algo dice ser PNG y no lo es, se reporta como fallo en lugar de incrustar basura.
+- `ProcesadorHtml` orquesta todo con las fuentes y el destino inyectados, cachea las imágenes y nunca escribe encima de un archivo de entrada. Si un archivo revienta por algo inesperado, se reporta y se sigue con el resto.
+- `ReporteProcesamiento` es el objeto `{success, fail}`.
 
-- `src` con comillas dobles, simples o sin comillas (incluso con `=` en el valor, como `logo.png?v=2`), en mayúsculas o con entidades (`&amp;`).
-- Atributos parecidos que no se deben tocar (`data-src`, `alt="src=..."`) y etiquetas dentro de comentarios o de `<script>`.
-- `<img>` sin `src`, imágenes ya embebidas (`data:`, se dejan igual) e imágenes repetidas (se reportan una vez; una misma URL se descarga una sola vez).
-- Rutas relativas al HTML (también con `\` como separador), absolutas, `file://`, con query string o con `%20`.
-- URLs relativas al protocolo (`//cdn...`), con espacios, malformadas, con error HTTP o que devuelven algo distinto a una imagen.
-- HTML en UTF-8, Windows-1252 o con BOM (UTF-8, UTF-16 o UTF-32), conservando la codificación y los saltos de línea.
-- Rutas de entrada inexistentes o que no son HTML, salidas que caerían sobre un archivo de entrada y errores al escribir: se reportan en `fail` y una imagen solo cuenta como exitosa si el archivo nuevo se pudo escribir.
+Casos que tuve en cuenta: `src` con comillas dobles, simples o sin comillas (incluso con `=` adentro, como `logo.png?v=2`), entidades como `&amp;`, etiquetas sin `src`, imágenes ya embebidas en `data:` (se dejan quietas), imágenes repetidas (se reportan una vez y una URL se descarga una sola vez), rutas con `\`, con query string o con `%20`, URLs malformadas o que devuelven algo que no es imagen, archivos en UTF-8, Windows-1252 o con BOM (UTF-8, UTF-16, UTF-32) conservando la codificación y los saltos de línea, y salidas que caerían sobre un archivo de entrada o que no se pueden escribir. Una imagen solo cuenta como exitosa si el archivo nuevo se escribió.
 
-Supuestos:
+Dos supuestos: solo proceso el atributo `src` de `<img>`, como dice el enunciado (`srcset`, `<picture>` y las imágenes de CSS quedan por fuera), y una ruta que empieza por `/` se resuelve como lo haría el navegador con un archivo local, desde la raíz del disco, no desde la raíz de un sitio.
 
-- Como indica el enunciado, solo se procesa el atributo `src` de `<img>`. `srcset`, `<picture><source>` y las imágenes referenciadas desde CSS quedan fuera del alcance.
-- Una ruta que empieza por `/` se resuelve como lo haría un navegador al abrir el archivo local: desde la raíz del sistema de archivos (en Windows, de la unidad del HTML), no desde la raíz de un sitio web.
-
-Las pruebas de descarga usan un servidor HTTP local que se levanta dentro de la misma prueba, así que no dependen de internet.
+Las pruebas de descarga levantan un servidor HTTP local dentro de la misma prueba, así que corren sin internet.

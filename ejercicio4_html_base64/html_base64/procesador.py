@@ -78,7 +78,7 @@ class DestinoSalida:
             return None
         try:
             return Path(os.path.commonpath([a.parent for a in archivos]))
-        except ValueError:  # p. ej. unidades distintas en Windows
+        except ValueError:  # unidades distintas en Windows, por ejemplo
             return None
 
 

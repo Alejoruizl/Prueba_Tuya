@@ -2,7 +2,7 @@
 
 Se usa ``html.parser`` para identificar las etiquetas (ignora correctamente
 comentarios, ``<script>`` y ``<style>``) y se reemplaza únicamente el valor del
-atributo ``src`` dentro del texto original de cada etiqueta, de modo que el HTML
+atributo ``src`` dentro del texto original de cada etiqueta, así el HTML
 generado es idéntico al original salvo por las imágenes.
 """
 

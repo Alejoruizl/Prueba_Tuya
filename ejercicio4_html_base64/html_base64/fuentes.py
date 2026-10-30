@@ -1,8 +1,8 @@
 """Fuentes de imágenes (estrategias) y codificación a data URI en base64.
 
-Cada fuente sabe si puede atender un ``src`` y cómo obtener sus bytes. Agregar un
-nuevo origen (p. ej. S3) consiste en implementar ``FuenteImagen`` sin modificar el
-procesador (principio abierto/cerrado).
+Cada fuente sabe si puede atender un ``src`` y cómo obtener sus bytes. Para agregar
+un origen nuevo (S3, por ejemplo) basta con implementar ``FuenteImagen``; el
+procesador no se toca.
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ def _esquema(src: str) -> str | None:
     """Esquema de la URL en minúsculas, o None si el ``src`` no es una URL válida."""
     try:
         return urllib.parse.urlsplit(src).scheme.lower()
-    except ValueError:  # p. ej. corchetes sin cerrar en el host: http://[::1
+    except ValueError:  # por ejemplo corchetes sin cerrar en el host: http://[::1
         return None
 
 

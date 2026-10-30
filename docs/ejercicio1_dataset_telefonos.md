@@ -1,15 +1,12 @@
-# Ejercicio 1: dataset confiable de teléfonos de clientes (CI/CD)
+# Ejercicio 1: dataset confiable de teléfonos de clientes
 
-## 1. Objetivo y alcance
+## Qué se busca
 
-Construir y mantener un dataset único y confiable de números de teléfono por cliente (*golden record* de contacto) que consuman los canales de servicio, cobranza y mercadeo. El proceso debe ser:
+Un solo dataset de teléfonos por cliente, confiable, que puedan consumir servicio al cliente, cobranza y mercadeo sin tener que preguntarse cuál de los cinco números que hay en los sistemas es el bueno. Lo pienso como un *golden record* de contacto.
 
-- **Automatizado**: corre de forma programada sin intervención manual.
-- **Controlado**: todo cambio (código, reglas o esquema) pasa por versionamiento, revisión, pruebas y promoción entre ambientes.
-- **Auditable**: cada número publicado se puede rastrear hasta su fuente, la regla que lo validó y la versión del pipeline que lo produjo.
-- **Conforme a la regulación**: Ley 1581 de 2012 (Habeas Data), autorización de contacto y Ley 2300 de 2023 (horarios y canales de contacto para cobranza).
+Para que sirva de verdad, el proceso que lo construye tiene que cumplir cuatro cosas: correr solo y de forma programada; que cualquier cambio (código, reglas, esquema) pase por versionamiento, revisión y pruebas antes de llegar a producción; que cada número publicado se pueda rastrear hasta la fuente, la regla que lo validó y la versión del proceso que lo produjo; y que respete la regulación, en particular la Ley 1581 de 2012 sobre datos personales y la Ley 2300 de 2023, que limita horarios y canales de contacto para cobranza.
 
-## 2. Arquitectura de referencia
+## Arquitectura
 
 ```mermaid
 flowchart LR
@@ -37,52 +34,56 @@ flowchart LR
     G --> C3[Analítica y KPIs<br/>ver ejercicio 2]
 ```
 
-| Capa | Contenido | Política |
+Uso el esquema de tres capas que ya es bastante estándar en lakehouse:
+
+**Bronze** es la copia fiel de cada fuente, con metadatos técnicos (`fuente`, `fecha_carga`, `id_lote`, `hash_registro`). Solo se inserta, nunca se corrige. La gracia es que si una regla de limpieza estaba mal, se reprocesa desde aquí sin volver a pedirle nada a la fuente.
+
+**Silver** tiene un registro por cliente, teléfono y fuente, ya normalizado y validado. Lo que no pasa las reglas no se descarta: va a una tabla de cuarentena con el motivo, porque un rechazo también es información (si una fuente empieza a mandar basura, quiero enterarme).
+
+**Gold** es `dim_cliente_telefono`, con historia tipo SCD 2 y la marca de cuál es el teléfono principal de cada cliente por tipo. Solo se publica si pasan los quality gates.
+
+En cuanto a tecnología, no me casaría con una: Databricks con Delta o un warehouse SQL, dbt para transformaciones y pruebas, Airflow para orquestar, Great Expectations o las pruebas de dbt para contratos de datos, GitHub Actions para CI/CD y Terraform para la infraestructura. Lo importante es el flujo, no la herramienta.
+
+## Reglas de negocio
+
+### Normalización
+
+Primero se limpia el formato: espacios, guiones, paréntesis, puntos y prefijos de marcación (`+`, `00`, `57`, el `03` viejo, códigos de operador). Luego se lleva todo a E.164, `+57XXXXXXXXXX`, y se clasifica según el plan de numeración de la CRC:
+
+- Móvil: 10 dígitos que empiezan por 3.
+- Fijo: 10 dígitos que empiezan por 60 más el indicativo regional (la marcación unificada que rige desde 2021). Todavía llegan muchos fijos de 7 dígitos de antes del cambio; esos se completan con el indicativo de la ciudad del cliente si la conocemos, y si no, a cuarentena.
+- Internacional: se conserva si es un E.164 válido de otro país.
+
+### Validaciones
+
+Cada regla tiene código, severidad y su prueba automatizada. Las que tengo claras hoy:
+
+| Código | Regla | Qué pasa si falla |
 |---|---|---|
-| Bronze | Copia fiel de cada fuente con metadatos técnicos (`fuente`, `fecha_carga`, `id_lote`, `hash_registro`). | Solo inserción (*append-only*). Nunca se corrige. Permite reprocesar. |
-| Silver | Un registro por (cliente, teléfono, fuente) normalizado y validado. | Reglas de calidad versionadas. Lo inválido va a cuarentena con el motivo, no se descarta. |
-| Gold | `dim_cliente_telefono` con historia (SCD2) y la marca de teléfono principal por cliente y tipo. | Solo se publica si pasan los *quality gates*. |
+| T01 | Longitud y prefijo válidos para el tipo | Cuarentena |
+| T02 | No es un número basura (`3000000000`, `3111111111`, secuencias) | Cuarentena |
+| T03 | No está en la lista negra (líneas de la compañía, de pruebas, empleados cargados como cliente) | Cuarentena |
+| T04 | No está compartido por más de *k* clientes sin relación | Se publica marcado como `telefono_compartido` |
+| T05 | El cliente existe en el maestro | Cuarentena |
+| T06 | Hay autorización de contacto vigente (Habeas Data) | Se publica con `apto_contacto = false` |
+| T07 | La fuente está actualizada dentro del SLA | Falla el quality gate de frescura |
 
-Tecnología sugerida (intercambiable): Databricks / Spark o un *warehouse* SQL, dbt para las transformaciones y pruebas, Airflow para la orquestación, Great Expectations o pruebas de dbt para contratos de datos y GitHub Actions para CI/CD. Infraestructura declarada en Terraform.
+### Elegir el principal
 
-## 3. Reglas de negocio y calidad del dato
-
-### 3.1 Normalización
-1. Quitar espacios, guiones, paréntesis, puntos y prefijos de marcación (`+`, `00`, `57`, `03`, códigos de operador de larga distancia).
-2. Representar en E.164: `+57XXXXXXXXXX`.
-3. Clasificar el tipo según el plan de numeración de Colombia (CRC):
-   - **Móvil**: 10 dígitos que empiezan por `3`.
-   - **Fijo**: 10 dígitos que empiezan por `60` + indicativo de departamento (marcación unificada desde 2021). Los fijos históricos de 7 dígitos se completan con el indicativo de la ciudad de la dirección del cliente cuando se conoce; si no, van a cuarentena.
-   - **Internacional**: se conserva si es E.164 válido para otro país.
-
-### 3.2 Validaciones (cada una con código, severidad y prueba automatizada)
-
-| Código | Regla | Acción |
-|---|---|---|
-| T01 | Longitud y prefijo válidos según el tipo | Cuarentena |
-| T02 | No es un número basura (`3000000000`, `3111111111`, secuencias, un dígito repetido) | Cuarentena |
-| T03 | No pertenece a una lista negra (números de la compañía, de pruebas o de empleados registrados como cliente) | Cuarentena |
-| T04 | Un mismo número compartido por más de *k* clientes no relacionados | Advertencia: se marca `telefono_compartido` |
-| T05 | Cliente existe en el maestro de clientes (integridad referencial) | Cuarentena |
-| T06 | Autorización de contacto vigente (Habeas Data) | Se publica con `apto_contacto = false` |
-| T07 | Frescura: fuente actualizada dentro del SLA | Falla el *quality gate* si se incumple |
-
-### 3.3 Deduplicación y supervivencia (*golden record*)
-Para cada cliente y tipo de teléfono se elige el principal con un puntaje determinístico y documentado:
+Cuando un cliente tiene varios números del mismo tipo hay que escoger uno, y prefiero que esa decisión sea una fórmula documentada y no un criterio a ojo:
 
 ```
-puntaje = peso_fuente                       (p. ej. core 0.4 > app 0.3 > CRM 0.2 > aliados 0.1)
-        + bono_verificado                   (OTP o contacto efectivo reciente)
-        + recencia                          (decrece con los días desde la última actualización)
-        - penalización_rebote               (SMS no entregado, número equivocado, buzón)
+puntaje = peso_fuente            (core 0.4 > app 0.3 > CRM 0.2 > aliados 0.1, por ejemplo)
+        + bono_verificado        (OTP o contacto efectivo reciente)
+        + recencia               (baja con los días desde la última actualización)
+        - penalización_rebote    (SMS no entregado, número equivocado, buzón)
 ```
 
-Los demás números válidos se conservan como secundarios. Si cambia el principal, el cambio queda historizado (SCD2: `vigente_desde`, `vigente_hasta`, `es_actual`).
+El de mayor puntaje es el principal, los demás válidos quedan como secundarios. Si el principal cambia, queda la historia en la SCD 2 (`vigente_desde`, `vigente_hasta`, `es_actual`), que es lo que permite saber qué número se usó en una gestión de hace seis meses.
 
-### 3.4 Retroalimentación de contactabilidad
-Los resultados de los canales (IVR, SMS, WhatsApp, asesores) entran como una fuente más. Esto permite degradar números que rebotan y promover los verificados. El dataset mejora con el uso.
+Un detalle que me parece importante: los resultados de los canales (IVR, SMS, WhatsApp, asesores) entran como una fuente más. Un número que rebota se va degradando y uno que contesta se va fortaleciendo. El dataset mejora solo con el uso.
 
-## 4. Proceso CI/CD
+## CI/CD
 
 ```mermaid
 flowchart LR
@@ -100,55 +101,47 @@ flowchart LR
     M -.->|incidente| RB[Rollback a versión anterior]
 ```
 
-### 4.1 Integración continua (en cada Pull Request)
-- **Estilo**: `sqlfluff` y `ruff`; *pre-commit hooks*.
-- **Pruebas unitarias**: funciones de normalización con casos borde (`+57 (300) 123-4567`, `0057...`, `6014...`, fijos de 7 dígitos, números basura).
-- **Contratos de datos**: el esquema de entrada y salida está versionado (YAML). Un cambio incompatible (columna eliminada, tipo distinto) rompe el *build*.
-- **Pruebas de datos**: `unique(cliente_id, tipo, es_principal)`, `not_null`, `accepted_values(tipo)`, regex E.164 y umbral de cuarentena, con pruebas de dbt o Great Expectations.
-- **Integración**: corrida sobre una muestra anonimizada y estable (*golden sample*); el resultado esperado está versionado y cualquier diferencia se revisa.
-- **Seguridad**: escaneo de secretos y de dependencias. No se usan datos personales reales fuera de producción.
+### En cada pull request
 
-### 4.2 Entrega y despliegue continuo
-- **Ambientes**: DEV, QA y PRD aislados, con la misma infraestructura definida en Terraform.
-- **Versionado**: semántico, para el pipeline y para las reglas. Cada lote publicado guarda la versión que lo generó.
-- **Promoción**: DEV es automático; QA es automático con *tag*; PRD requiere aprobación manual del *data owner* (GitHub Environments con *required reviewers*).
-- **Despliegue blue/green del dato**: el lote nuevo se escribe en una tabla o partición de preparación. Solo si pasan los *quality gates* se hace el intercambio atómico (vista o *swap*) hacia la tabla consumida.
-- **Rollback**: *time travel* (Delta/Iceberg) o volver a apuntar la vista a la versión anterior, más el *revert* del código.
+Corre lint (`sqlfluff`, `ruff`, con pre-commit), las pruebas unitarias de normalización con sus casos borde (`+57 (300) 123-4567`, `0057...`, `6014...`, fijos de 7 dígitos, números basura), las pruebas de contrato (el esquema de entrada y salida está en YAML versionado; si alguien quita una columna o cambia un tipo, el build se rompe antes de llegar a producción), las pruebas de datos (`unique(cliente_id, tipo, es_principal)`, `not_null`, `accepted_values(tipo)`, regex de E.164, umbral de cuarentena) y una corrida de integración sobre una muestra anonimizada y estable, cuyo resultado esperado también está versionado: cualquier diferencia se revisa a mano. Aparte, escaneo de secretos y dependencias. Nunca datos personales reales fuera de producción.
 
-### 4.3 Quality gates en producción (en cada corrida)
+### Despliegue
 
-| Gate | Condición para publicar |
+Tres ambientes, DEV, QA y PRD, con la misma infraestructura en Terraform. El paso a DEV es automático al hacer merge; a QA, con un tag de versión; a PRD, con aprobación manual del data owner (GitHub Environments con revisores obligatorios).
+
+El dato se despliega en modo blue/green: el lote nuevo se escribe en una tabla o partición aparte y solo cuando pasa los quality gates se hace el cambio atómico (una vista que se reapunta, o un swap). Si algo sale mal después, el rollback es volver a la versión anterior con time travel de Delta o Iceberg, más el revert del código.
+
+### Quality gates en producción
+
+| Gate | Para publicar |
 |---|---|
-| Volumen | Filas dentro de +/- X% de la media móvil de 7 corridas |
-| Cuarentena | Tasa de rechazo <= umbral (p. ej. 5%) y sin saltos bruscos |
-| Unicidad | 0 clientes con más de un teléfono principal por tipo |
+| Volumen | Filas dentro de +/- X% de la media móvil de las últimas 7 corridas |
+| Cuarentena | Tasa de rechazo por debajo del umbral (5%, digamos) y sin saltos raros |
+| Unicidad | Ningún cliente con dos principales del mismo tipo |
 | Frescura | Todas las fuentes críticas cargadas dentro del SLA |
-| Deriva | Distribución de tipo y fuente sin cambios significativos (PSI) |
+| Deriva | La distribución por tipo y fuente no cambió de forma significativa (PSI) |
 
-Si un gate falla, no se publica: los consumidores siguen leyendo el último lote bueno y se alerta al equipo (Teams o Slack y ticket).
+Si un gate falla no se publica, los consumidores siguen con el último lote bueno y el equipo recibe la alerta (Teams o Slack, más un ticket).
 
-### 4.4 Mantenimiento
-- Las reglas (listas negras, pesos de fuente, umbrales) viven como configuración versionada y cambian por Pull Request, no en código.
-- Reproceso histórico desde Bronze cuando cambia una regla (*backfill* parametrizado por rango de fechas).
-- Ciclo de vida: retención y anonimización según la política de datos personales. Supresión ante solicitud del titular (derecho de supresión).
-- Revisión trimestral de reglas con negocio usando los KPIs del ejercicio 2.
+### Mantenimiento
 
-## 5. Gobierno y seguridad
-- Data owner (negocio) y data steward (calidad) definidos para el dataset.
-- Columnas de teléfono clasificadas como dato personal: cifradas en reposo, enmascaradas para roles no autorizados y con accesos auditados.
-- Catálogo (Unity Catalog / DataHub / Purview) con la descripción, el linaje y el contrato del dataset.
+Las listas negras, pesos de fuente y umbrales viven como configuración versionada y se cambian por pull request, no tocando código. Cuando cambia una regla se puede reprocesar la historia desde Bronze con un backfill por rango de fechas. La retención, anonimización y supresión (cuando el titular lo pide) siguen la política de datos personales de la compañía. Y una vez por trimestre revisaría las reglas con negocio usando los KPIs del ejercicio 2.
 
-## 6. Modelo de salida (Gold)
+## Gobierno y seguridad
 
-| Columna | Descripción |
+El dataset tiene un data owner (negocio) y un data steward (calidad) con nombre propio. Las columnas de teléfono son dato personal: cifradas en reposo, enmascaradas para quien no las necesite completas y con acceso auditado. Todo queda en el catálogo (Unity Catalog, DataHub o Purview, el que use la compañía) con descripción, linaje y contrato.
+
+## Tabla de salida (Gold)
+
+| Columna | Qué es |
 |---|---|
 | `cliente_id` | Identificador del cliente |
 | `telefono_e164` | Número normalizado |
-| `tipo` | MOVIL / FIJO / INTERNACIONAL |
-| `es_principal` | Ganador de la supervivencia para el cliente y tipo |
-| `puntaje_confianza` | 0-1, resultado de la regla de supervivencia |
-| `fuente_origen` | Fuente que aportó el número |
+| `tipo` | MOVIL, FIJO o INTERNACIONAL |
+| `es_principal` | El que ganó la supervivencia para ese cliente y tipo |
+| `puntaje_confianza` | Entre 0 y 1, resultado de la fórmula |
+| `fuente_origen` | De dónde salió el número |
 | `fecha_ultima_verificacion` | Último contacto efectivo u OTP |
 | `apto_contacto` | Autorización vigente y número no bloqueado |
-| `vigente_desde` / `vigente_hasta` / `es_actual` | Historia SCD2 |
-| `version_pipeline` / `id_lote` | Trazabilidad técnica |
+| `vigente_desde`, `vigente_hasta`, `es_actual` | Historia SCD 2 |
+| `version_pipeline`, `id_lote` | Trazabilidad técnica |
